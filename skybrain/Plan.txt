@@ -1,164 +1,356 @@
-The priority should be a safety-critical brain/control core, not the dashboard. I would not call the current system war-ready yet, and I would not connect it to live operational inputs until the tracker, threat assessor, control state machine, timing, authentication, and failure behavior pass defined acceptance tests.
+# Skybrain Final Plan
 
-One important discrepancy: the code currently in  C:\Codes\Drone\skybrain  still shows a single constant-velocity Kalman tracker in  tracker.py ; it does not contain the IMM or signature-aware association described in your update. The control layer also remains a simple recommendation generator. Reconcile the shipped source before measuring further.
+## Mission
 
-Target architecture
+Build Skybrain as a resilient, sensor-fused, human-controlled defensive airspace
+decision system for detecting, tracking, classifying, and prioritizing drones
+under uncertainty.
 
-Sensors
-  -> time/quality validation
-  -> measurement normalization
-  -> multi-model tracker
-  -> track identity and association
-  -> uncertainty-aware threat assessment
-  -> human-control state machine
-  -> authenticated audit/event stream
-  -> operator UI
+The system must remain useful under high-speed manoeuvres, sensor dropouts,
+clutter, spoofed identity, degraded communications, GPS-denied conditions,
+multiple simultaneous tracks, operator overload, restarts, clock errors, and
+audit failures.
 
-The dashboard must remain a consumer of the brain’s public output. It must not calculate threat, infer identity, or make control decisions.
+Skybrain must not autonomously select, authorize, or execute offensive effects.
+The brain produces recommendations; authorized external systems and personnel
+remain responsible for any response.
 
-Phase 0 — Define the operational envelope
+## System architecture
 
-Before tuning algorithms, record explicit requirements for:
+    Sensors
+      -> timestamp and quality validation
+      -> measurement normalization
+      -> multi-sensor association
+      -> IMM / manoeuvring tracker
+      -> identity and track-quality assessment
+      -> uncertainty-aware threat prediction
+      -> human decision state machine
+      -> authenticated audit stream
+      -> operator display and approved integrations
 
-• Maximum target speed, acceleration, turn rate, climb/descent rate, and jerk.
-• Sensor update rate, latency, timestamp error, dropout duration, and expected false detections.
-• Minimum detection range and available warning time.
-• Number of simultaneous targets and closely spaced targets.
-• Spoofed identity behavior, RF loss, GNSS denial, clutter, birds, friendly aircraft, and crossing tracks.
-• Clock source, coordinate frame, altitude reference, and maximum allowed end-to-end latency.
+The dashboard is secondary. It consumes a versioned brain-output contract and
+never performs threat calculations or decision logic.
 
-“Fastest drone” must become a measurable envelope. A tracker that performs well at 30 m/s may fail badly at 100 m/s if the scan period, gate, coast time, or process latency is unchanged.
+## Phase 0: Define the operational envelope
 
-Phase 1 — Make tracking robust before adding live input
+Specify measurable limits before further algorithm tuning:
 
-Use two or more explicit models:
+- maximum target speed;
+- maximum acceleration, turn rate, climb rate, and jerk;
+- sensor update rates and latency;
+- timestamp accuracy and clock synchronization;
+- detection range and required warning time;
+- expected dropout duration;
+- number of simultaneous targets;
+- minimum track quality for each threat state;
+- friendly-aircraft and authorized-drone procedures;
+- RF spoofing, GNSS denial, clutter, birds, and urban multipath conditions;
+- maximum acceptable end-to-end latency.
 
-• Constant velocity for stable cruise.
-• Coordinated turn or acceleration/Singer model for manoeuvres.
-• IMM mixing with model probabilities, but expose the probability as diagnostic metadata only—not as an “evasive” classification.
+“Fast drone” must become a testable envelope. Every gate and coast parameter
+depends on this definition.
+
+Deliverable: an operational-envelope document and scenario matrix.
+
+## Phase 1: Build the tracker core
+
+Use an IMM with at least:
+
+1. constant-velocity cruise;
+2. acceleration/Singer manoeuvre;
+3. coordinated-turn manoeuvre.
+
+Model probabilities are diagnostic evidence only. They must not be presented as
+an “evasive attacker” conclusion.
 
 Required tracker behavior:
 
-• Association cost combining Mahalanobis distance, velocity consistency, and authenticated sensor/signature evidence.
-• Gating sized for the stated speed and scan interval, not a fixed simulator value.
-• Track confirmation and deletion based on time and evidence, not only scan count.
-• Adaptive coast time based on target speed, uncertainty growth, and sensor quality.
-• Stable track IDs through short dropouts and crossings.
-• Out-of-sequence measurement handling or an explicit rejection/audit path.
-• Positive-semidefinite covariance checks and numerical fault handling.
-• Track freshness, age, missed scans, sensor support, and quality state in the internal model.
-• No silent fallback when timestamps, covariance, or measurements are invalid.
+- Mahalanobis gating adapted to speed, uncertainty, and scan interval;
+- association cost combining position likelihood, velocity consistency, track
+  age, quality, sensor/signature evidence, and authenticated identity evidence;
+- stable IDs through crossings and short dropouts;
+- track confirmation based on time, quality, and evidence;
+- adaptive coast time based on uncertainty growth and target dynamics;
+- explicit NEW, CONFIRMED, DEGRADED, STALE, and LOST states;
+- an explicit out-of-sequence measurement policy;
+- rejection and audit of invalid timestamps, covariance, and measurements;
+- positive-semidefinite covariance checks;
+- no silent fallback after numerical or sensor faults;
+- sensor contributors and freshness metadata on every track.
 
-Acceptance metrics should include position error, velocity error, track continuity, ID swaps, false track births, missed tracks, and p50/p95/p99 processing latency.
+Track diagnostics should include position and velocity uncertainty, acceleration
+estimate, last update time, missed scans, identity evidence, model
+probabilities, track quality, association confidence, and data age.
 
-Phase 2 — Replace straight-line threat logic with bounded prediction
+Deliverable: IMM tracker with deterministic diagnostics and unit tests.
 
-The current  threat.py  relies heavily on constant-velocity time-to-zone and closest-approach calculations. For manoeuvring targets, use a conservative reachable prediction:
+## Phase 2: Harden identity and classification
 
-• Propagate each plausible motion model.
-• Include covariance and a bounded acceleration/turn envelope.
-• Assess whether the protected zone is reachable within the warning horizon, not merely whether the current straight-line path intersects it.
-• Treat stale tracks and degraded sensors explicitly.
-• Produce reasons such as “reachable under maximum turn envelope” or “prediction stale,” rather than implying certainty.
-• Keep unknown classification conservative, but avoid allowing a high-speed threat to remain harmless solely because classification confidence is late.
+Identity must be evidence-based and fail closed.
 
-Threat state should be monotonic and explicit:
+Rules:
 
-NEW -> OBSERVE -> WARN -> ALERT -> CRITICAL
-                    \-> STALE
-                    \-> LOST
+- authenticated friendly identity is strong positive evidence, not an absolute
+  override;
+- unverified broadcast IDs are never trusted alone;
+- RF, radar, EO/IR, acoustic, and kinematic evidence must be correlatable;
+- identity conflicts create an explicit IDENTITY_CONFLICT state;
+- impossible motion and identity changes are audited;
+- a friendly claim cannot automatically suppress a physically dangerous track;
+- classification confidence remains separate from threat severity.
 
-De-escalation, cancellation, and stale transitions need separate rules from escalation. Every transition should include the evidence, timestamp, model quality, and uncertainty used.
+Use labels such as:
 
-Phase 3 — Harden the control section
+    FRIENDLY_CONFIRMED
+    DRONE_LIKELY
+    BIRD_LIKELY
+    UNKNOWN
+    IDENTITY_CONFLICT
+    UNRESOLVED
 
-The current  Engine  has a useful human-approval boundary, but it needs a real decision state machine. Each recommendation should have:
+Deliverable: classifier contract, spoofing tests, crossing-track tests, and
+identity-conflict scenarios.
 
-• Globally unique recommendation ID.
-• Track ID and track-version reference.
-• Creation time, expiry time, and source event.
-• Threat level and evidence snapshot at creation.
-• Required authority/role.
-• State:  OPEN ,  APPROVED ,  REJECTED ,  EXPIRED ,  CANCELLED , or  SUPERSEDED .
-• Idempotency protection so duplicate approvals cannot create duplicate actions.
-• Explicit handling when the track changes, disappears, becomes stale, or is reclassified.
-• Operator identity, authentication context, reason code, and free-text note.
-• No action on timeout, disconnect, malformed command, or ambiguous state.
+## Phase 3: Replace straight-line threat assessment
 
-The brain should emit recommendations only. Any future effector integration must be a separate, independently authorized subsystem with its own interlocks and safety review—not a hidden extension of  Engine .
+Straight-line time-to-zone logic is insufficient for sharp turns. Implement
+uncertainty- and manoeuvre-bounded prediction:
 
-Phase 4 — Make timing and failure behavior deterministic
+- propagate all plausible motion models;
+- include covariance growth;
+- include sensor latency and data age;
+- include bounded acceleration and turn-rate envelopes;
+- compute reachable protected-zone entry intervals;
+- distinguish current path from reachable path;
+- downgrade confidence when prediction is stale or models diverge;
+- prevent false certainty from a single projected line.
 
-Add system-level controls before live streaming:
+Threat output should include current state, reachable entry interval, best
+estimate, worst credible estimate, prediction confidence, data freshness,
+sensor count, identity confidence, and reason codes.
 
-• Monotonic timestamps and synchronized wall-clock timestamps for audit.
-• Per-stage latency measurements.
-• Bounded queues and backpressure.
-• Heartbeats and watchdogs.
-• Sensor-health and brain-health states.
-• Explicit degraded modes for sensor loss, clock faults, overload, and audit failure.
-• Fail-closed control behavior: if decision context or authorization is incomplete, do not treat it as approved.
-• Resource limits and recovery tests.
-• No stale recommendation presented as current.
+Example:
 
-A live dashboard should show freshness and degraded state prominently, but the brain must enforce those rules independently.
+    ALERT - reachable critical-zone entry 38-54 s; last update 0.8 s ago;
+    two corroborating sensors; identity conflict unresolved.
 
-Phase 5 — Strengthen audit and security
+Threat states:
 
-The current hash chain detects modification within the in-memory/exported sequence, but it is not sufficient as an operational audit system. Add:
+    NEW
+    OBSERVE
+    WARN
+    ALERT
+    CRITICAL
+    STALE
+    LOST
+    RESOLVED
 
-• Authenticated operator identity and role.
-• Secure time source and monotonic sequence numbers.
-• Recommendation ID and decision correlation.
-• Append-only durable storage.
-• Keyed signatures or an externally anchored integrity mechanism.
-• Key rotation and compromise handling.
-• Startup/restart records and audit-gap detection.
-• Audit failure as a visible system fault, never a successful export.
-• Replay tests proving that decisions, stale states, and track revisions are reproducible.
+Escalation and de-escalation must be separate policies. A threat must not
+instantly disappear because one scan becomes benign.
 
-Do not place credentials, signing keys, or trust decisions in the dashboard or replay file.
+Deliverable: bounded threat predictor with adversarial manoeuvre tests.
 
-Verification gates
+## Phase 4: Make the control layer deterministic
 
-Before live operation, require all of these:
+Every recommendation must be a formal, traceable object containing:
 
-┌───────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Area          │ Required evidence                                                                              │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Fast targets  │ Performance across the maximum specified speed/turn envelope                                   │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Continuity    │ No unacceptable track swaps during crossings, turns, dropouts, or spoofed IDs                  │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Detection     │ No missed threats in the defined scenario set                                                  │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ False alarms  │ Measured rate across birds, friendly aircraft, clutter, and benign pass-bys                    │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Timing        │ Worst-case end-to-end latency, not just average latency                                        │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Control       │ Duplicate, stale, expired, unauthorized, rejected, and disconnected decisions behave correctly │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Resilience    │ Sensor loss, clock error, process restart, overload, and audit failure are safe                │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Audit         │ Every recommendation and human decision is attributable and tamper-evident                     │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Human factors │ Operators can distinguish estimate, uncertainty, freshness, and authority state                │
-├───────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Security      │ Threat model, authentication, authorization, dependency review, and red-team testing complete  │
-└───────────────┴────────────────────────────────────────────────────────────────────────────────────────────────┘
+- globally unique recommendation ID;
+- track ID and track-version ID;
+- creation time;
+- expiry time;
+- threat state;
+- immutable evidence snapshot;
+- identity and sensor evidence;
+- required authority or role;
+- reason codes;
+- current recommendation state.
 
-Use scenario replay, Monte Carlo, property-based tests, hardware-in-the-loop, fault injection, and shadow-mode trials. Simulator results alone are not evidence of field readiness.
+Recommendation states:
 
-Immediate implementation order
+    OPEN
+    APPROVED
+    REJECTED
+    EXPIRED
+    CANCELLED
+    SUPERSEDED
+
+Rules:
+
+- decisions are single-use and idempotent;
+- duplicate decisions are rejected and audited;
+- mismatched track versions are rejected;
+- expired recommendations cannot be approved;
+- silence never means approval;
+- network loss never means approval;
+- stale evidence cannot silently remain actionable;
+- disappearing or reclassified tracks update the recommendation;
+- every transition records who, when, why, and which evidence snapshot was used;
+- the brain never directly activates an effector.
+
+Deliverable: deterministic control state machine and decision-transition tests.
+
+## Phase 5: Design for saturation and operator workload
+
+Prioritize attention using:
+
+1. reachable protected-zone entry time;
+2. uncertainty-adjusted threat;
+3. identity conflict;
+4. track freshness;
+5. proximity and consequence;
+6. sensor corroboration;
+7. recommendation age.
+
+Merge duplicate sensor reports, avoid repeated alerts for unchanged evidence,
+show the most urgent unresolved decision first, and preserve access to the full
+evidence chain.
+
+The operator must be able to distinguish estimate, prediction, confidence,
+confirmation, freshness, and authority state immediately. Acknowledgement must
+not imply approval.
+
+Deliverable: human-factors review, alert-saturation tests, and operator
+usability evaluation.
+
+## Phase 6: Resilience and degraded modes
+
+Treat these as normal operating states:
+
+- GPS unavailable;
+- clock disagreement;
+- sensor dropout;
+- network loss;
+- queue overload;
+- audit failure;
+- process restart;
+- model divergence;
+- conflicting identity;
+- stale track;
+- partial sensor availability.
+
+Each mode requires deterministic behavior, visible health status, a clear
+operator message, bounded recovery behavior, an audit record, and test
+coverage.
+
+The system must fail closed for authorization and control while preserving
+detection and evidence collection where safe.
+
+Deliverable: fault-injection suite and recovery requirements.
+
+## Phase 7: Secure, durable audit
+
+The current hash chain is useful integrity evidence but is not a complete
+operational audit system. Add:
+
+- authenticated operator identity;
+- role and authority;
+- secure wall-clock timestamp;
+- monotonic sequence;
+- recommendation correlation;
+- track-version correlation;
+- append-only durable storage;
+- startup, shutdown, restart, and recovery records;
+- key management and rotation;
+- external integrity anchoring where appropriate;
+- audit-gap detection;
+- audit failure as a visible system fault;
+- deterministic replay of decisions and state transitions.
+
+Credentials and signing keys must never enter the dashboard or replay payload.
+
+Deliverable: durable audit subsystem, tamper tests, restart tests, and replay
+verification.
+
+## Phase 8: Live stream after the brain contract is stable
+
+The live interface may stream brain state, track updates, event updates,
+recommendation updates, health/degraded-mode updates, and audit acknowledgements.
+
+It must support:
+
+- sequence numbers;
+- reconnect and resume;
+- duplicate suppression;
+- stale-data detection;
+- backpressure;
+- bounded queues;
+- authentication and authorization;
+- explicit connection health;
+- server-side decision validation.
+
+The dashboard must never approve a stale or superseded recommendation merely
+because it was displayed earlier.
+
+Deliverable: versioned live API and disconnected/reconnect tests.
+
+## Verification program
+
+### Scenario replay
+
+Include fast straight targets, weaving targets, late sharp turns, coordinated
+turns, crossing drone and bird tracks, spoofed friendly IDs, identity changes,
+sensor dropouts, delayed measurements, GPS-denied operation, clutter bursts,
+multiple simultaneous targets, and saturated recommendation queues.
+
+### Monte Carlo
+
+Measure position error, velocity error, track continuity, ID swaps, false track
+births, missed tracks, false warnings, missed warnings, warning lead time,
+p50/p95/p99 latency, CPU behavior, and memory behavior.
+
+### Fault injection
+
+Test invalid timestamps, clock rollback, covariance failure, sensor silence,
+duplicate measurements, network disconnection, brain restart, audit storage
+failure, duplicate operator commands, expired recommendations, and superseded
+recommendations.
+
+### Higher-fidelity validation
+
+Before operational consideration, conduct hardware-in-the-loop tests,
+representative sensor replay, shadow-mode trials, independent safety review,
+independent cybersecurity review, human-factors evaluation, red-team spoofing
+tests, overload exercises, and reproducible release/rollback procedures.
+
+Simulator success is necessary but not sufficient evidence.
+
+## Release gates
+
+No live operational integration until all gates pass:
+
+| Gate | Required result |
+|---|---|
+| Fast-target tracking | Performance within the defined speed and manoeuvre envelope |
+| Track identity | No unacceptable swaps during crossings, dropouts, or spoofing |
+| Threat prediction | Conservative bounded prediction with explicit uncertainty |
+| Warning timing | Worst-case latency and warning lead time measured |
+| False alarms | Measured across birds, clutter, friendly traffic, and benign drones |
+| Control safety | No duplicate, stale, unauthorized, or ambiguous approvals |
+| Resilience | Safe behavior under sensor, clock, network, process, and audit faults |
+| Audit | Complete attributable and tamper-evident decision history |
+| Human factors | Operators understand freshness, uncertainty, identity, and authority |
+| Security | Authentication, authorization, threat modeling, dependency review, and red-team testing |
+| Deployment | Reproducible builds, monitoring, rollback, and incident procedures |
+
+## Immediate implementation order
 
 1. Reconcile the repository with the claimed IMM implementation.
-2. Add tracker diagnostics and a scenario matrix for speed, turn rate, dropout, crossings, and spoofing.
-3. Harden association, freshness, covariance, and track lifecycle.
-4. Replace straight-line threat prediction with uncertainty- and manoeuvre-bounded prediction.
-5. Convert  Engine  into an explicit, idempotent recommendation state machine.
-6. Add timing, health, degraded-mode, and fault-injection tests.
-7. Upgrade authenticated durable audit.
-8. Only then add the live stream.
-9. Keep the dashboard as a read-only operator surface and test it against stale, degraded, conflicting, and expired brain outputs.
+2. Define the maximum target and sensor envelope.
+3. Add tracker diagnostics and scenario fixtures.
+4. Harden association, lifecycle, uncertainty, and freshness.
+5. Implement bounded manoeuvre-aware threat prediction.
+6. Finish the recommendation state machine with track versions and stale
+   cancellation.
+7. Add failure states, health monitoring, and fault injection.
+8. Upgrade the audit system for authenticated durable operation.
+9. Define and test the versioned live-stream contract.
+10. Connect the dashboard in read-only shadow mode.
+11. Conduct hardware-in-the-loop and operator evaluation.
+12. Release only after independent safety and security approval.
 
-The next concrete milestone should be “tracker + control core passes deterministic failure and fast-target tests,” not “dashboard connects live.”
+## Final principle
+
+Skybrain should not try to be an autonomous warrior. It should remain accurate,
+explainable, resilient, conservative, and accountable when the environment is
+confusing and time is short. That is the extraordinary capability worth
+building.
