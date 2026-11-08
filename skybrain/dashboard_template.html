@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Skybrain operator dashboard</title>
+<style>
+:root{--bg:#f4f6f9;--panel:#fff;--ink:#14181f;--mut:#566170;--line:#d9dee6;--map:#eaeef3;--l0:#7b8696;--l1:#1f6fc4;--l2:#a86e00;--l3:#d1530a;--l4:#c81f2b;--ok:#13783e;--bi:#fff;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1015;--panel:#161a21;--ink:#e7eaf0;--mut:#9aa5b4;--line:#2a313b;--map:#10141a;--l0:#8793a3;--l1:#5aa2ee;--l2:#e3a82b;--l3:#f47d2f;--l4:#ff5963;--ok:#4cc77e;--bi:#0d1015;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0d1015;--panel:#161a21;--ink:#e7eaf0;--mut:#9aa5b4;--line:#2a313b;--map:#10141a;--l0:#8793a3;--l1:#5aa2ee;--l2:#e3a82b;--l3:#f47d2f;--l4:#ff5963;--ok:#4cc77e;--bi:#0d1015;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{overflow-x:hidden}
+header{padding:12px 14px 8px}
+h1{font-size:17px;margin:0 0 8px;letter-spacing:.02em}
+h2{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+.chip.warn{border-color:var(--l2);color:var(--l2)}
+main{display:grid;gap:12px;padding:6px 14px 20px;max-width:1200px;margin:0 auto}
+@media(min-width:900px){main{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}.wide{grid-column:1/-1}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+svg{width:100%;height:auto;display:block;background:var(--map);border-radius:8px;touch-action:manipulation}
+.ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+button,select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;min-height:44px;padding:0 14px;cursor:pointer}
+button.pri{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+button.ok{border-color:var(--ok);color:var(--ok);font-weight:600}
+button.no{border-color:var(--l4);color:var(--l4);font-weight:600}
+input[type=range]{flex:1;min-width:140px;min-height:44px}
+.tl{position:relative;height:10px;margin-top:2px}
+.tick{position:absolute;top:0;width:3px;height:10px;border-radius:2px}
+.list{max-height:280px;overflow-y:auto;overflow-x:hidden}
+.row{border-top:1px solid var(--line);padding:8px 0;font-size:13px;overflow-wrap:anywhere}
+.row:first-child{border-top:0}
+.badge{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;color:var(--bi)}
+.mut{color:var(--mut)}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:13px}
+dt{color:var(--mut)}dd{margin:0}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:var(--mut)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+@media(max-width:639px){
+  header{padding:10px 12px 6px}
+  main{padding:6px 12px 18px;gap:10px}
+  .card{padding:10px;border-radius:10px}
+  svg{height:min(78vw,430px);object-fit:contain}
+  .ctl{gap:6px}
+  .ctl button,.ctl select{flex:1 1 auto}
+  .ctl #play{flex:0 0 auto}
+  #next{flex-basis:100%}
+  .list{max-height:360px}
+  .legend{gap:6px 10px}
+}
+@media(max-width:380px){
+  h1{font-size:16px}
+  .chip{font-size:11px;padding:3px 8px}
+  svg{height:min(82vw,390px)}
+}
+@media(orientation:landscape) and (max-width:767px){
+  svg{height:min(64vh,430px)}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>SKYBRAIN · Operator view</h1>
+  <div class="chips">
+    <span class="chip warn">SOURCE: SIMULATOR</span>
+    <span class="chip warn">POSITIONS: STRAIGHT-LINE ESTIMATE</span>
+    <span class="chip">REPLAY MODE</span>
+    <span class="chip" id="hi">–</span>
+  </div>
+</header>
+<main>
+  <section class="card" aria-label="Air picture">
+    <h2>Air picture · north up</h2>
+    <svg id="map" viewBox="-2700 -2700 5400 5400" role="img" aria-label="Top-down air picture with tracks"></svg>
+    <div class="legend" id="legend"></div>
+    <div class="legend"><span>Dashed ring: 2σ position error</span><span>Line: 20 s straight-line projection</span><span>Tail: last 30 s</span></div>
+    <div class="ctl">
+      <button class="pri" id="play">Play</button>
+      <div style="flex:1;min-width:140px"><input type="range" id="scrub" min="0" value="0" aria-label="Replay time" style="width:100%"><div class="tl" id="ticks" title="Marks: ALERT or CRITICAL escalations"></div></div>
+      <span class="mono" id="clock">t=0 s</span>
+    </div>
+    <div class="ctl">
+      <select id="speed" aria-label="Speed"><option value="1">1×</option><option value="4">4×</option><option value="10">10×</option></select>
+      <button id="next">Next recommendation ›</button>
+    </div>
+  </section>
+  <div style="display:grid;gap:12px;align-content:start;min-width:0">
+    <section class="card"><h2>Selected track</h2><div id="sel" class="mut">Tap a track on the map.</div></section>
+    <section class="card"><h2>Alert queue</h2><div class="list" id="events"></div></section>
+  </div>
+  <section class="card wide"><h2>Audit log</h2><div class="mut" id="chain" style="margin-bottom:6px"></div><div class="list" id="audit"></div></section>
+</main>
+<script id="replay" type="application/json">__REPLAY__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("replay").textContent);
+if (D.schema !== 1) { document.body.innerHTML = "<p style='padding:20px'>Unsupported replay schema.</p>"; throw new Error("schema"); }
+const M = D.meta, F = D.frames, E = D.events, A = D.audit, LV = M.levels, Z = M.zones;
+const $ = s => document.querySelector(s);
+const col = l => "var(--l" + l + ")";
+const S = {};
+F.forEach((f, i) => f.tracks.forEach(k => (S[k.id] = S[k.id] || []).push({ i, x: k.x, y: k.y })));
+const local = [], decided = {};
+let cur = 0, sel = null, timer = null;
+
+// static map
+let base = "";
+[[Z.sensor, "var(--line)", "14 22"], [Z.outer, "var(--l2)", "30 18"], [Z.inner, "var(--l4)", ""]].forEach(([r, c, d]) => {
+  base += `<circle r="${r}" fill="none" stroke="${c}" stroke-width="3" stroke-dasharray="${d}" vector-effect="non-scaling-stroke"/>`;
+});
+base += `<text x="${Z.sensor - 60}" y="-60" text-anchor="end" font-size="100" fill="var(--mut)">sensor ${Z.sensor} m</text>`;
+base += `<text x="${Z.outer - 60}" y="120" text-anchor="end" font-size="100" fill="var(--l2)">warn ${Z.outer} m</text>`;
+base += `<text x="0" y="${-Z.inner - 50}" text-anchor="middle" font-size="100" fill="var(--l4)">critical ${Z.inner} m</text>`;
+base += `<path d="M-60 40 L0 -70 L60 40 L0 10Z" fill="var(--ink)"/><text x="0" y="-2560" text-anchor="middle" font-size="150" fill="var(--mut)">N</text>`;
+$("#map").innerHTML = base + `<g id="trails"></g><g id="trk"></g>`;
+$("#legend").innerHTML = LV.map((n, l) => `<span><i class="dot" style="background:${col(l)}"></i>${n}</span>`).join("");
+
+function marker(k, px, py) {
+  const c = col(k.level), r = 62;
+  if (k.level >= 3) return `<path d="M${px} ${py - r * 1.5}L${px + r * 1.5} ${py}L${px} ${py + r * 1.5}L${px - r * 1.5} ${py}Z" fill="${c}"/>`;
+  if (k.level === 2) return `<rect x="${px - r}" y="${py - r}" width="${2 * r}" height="${2 * r}" fill="${c}"/>`;
+  return `<circle cx="${px}" cy="${py}" r="${r}" fill="${c}"/>`;
+}
+
+function render() {
+  const f = F[cur], T = f.t;
+  const labelSize = window.innerWidth <= 639 ? 90 : 125;
+  let tr = "", tk = "", hi = 0;
+  f.tracks.forEach(k => {
+    hi = Math.max(hi, k.level);
+    const px = k.x, py = -k.y, c = col(k.level);
+    const pts = (S[k.id] || []).filter(p => p.i <= cur && p.i >= cur - 30).map(p => `${p.x},${-p.y}`).join(" ");
+    tr += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2" opacity=".55" vector-effect="non-scaling-stroke"/>`;
+    tk += `<g data-id="${k.id}" style="cursor:pointer">`;
+    tk += `<circle cx="${px}" cy="${py}" r="${Math.max(2 * k.sig, 40)}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="6 6" vector-effect="non-scaling-stroke"/>`;
+    tk += `<line x1="${px}" y1="${py}" x2="${px + k.vx * 20}" y2="${py - k.vy * 20}" stroke="${c}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+    tk += marker(k, px, py);
+    if (sel === k.id) tk += `<circle cx="${px}" cy="${py}" r="150" fill="none" stroke="var(--ink)" stroke-width="3" vector-effect="non-scaling-stroke"/>`;
+    tk += `<circle cx="${px}" cy="${py}" r="170" fill="transparent"/>`;
+    tk += `<text x="${px + 130}" y="${py - 90}" font-size="${labelSize}" font-weight="700" fill="${c}" stroke="var(--map)" stroke-width="28" paint-order="stroke">#${k.id} ${k.label}${k.level >= 2 ? " · " + LV[k.level] : ""}</text></g>`;
+  });
+  $("#trails").innerHTML = tr;
+  $("#trk").innerHTML = tk;
+  $("#hi").innerHTML = `Highest now: <span style="color:${col(hi)}">${LV[hi]}</span> · ${f.tracks.length} track${f.tracks.length === 1 ? "" : "s"}`;
+  $("#clock").textContent = `t=${T} s`;
+  $("#scrub").value = cur;
+
+  const k = f.tracks.find(x => x.id === sel);
+  $("#sel").innerHTML = k ? `<dl>
+    <dt>Track</dt><dd>#${k.id}</dd>
+    <dt>Class</dt><dd>${k.label} (${Math.round(k.conf * 100)}% confidence)</dd>
+    <dt>Threat level</dt><dd><span class="badge" style="background:${col(k.level)}">${LV[k.level]}</span></dd>
+    <dt>Range</dt><dd>${Math.round(Math.hypot(k.x, k.y))} m from site</dd>
+    <dt>Speed</dt><dd>${Math.hypot(k.vx, k.vy).toFixed(1)} m/s (${(Math.hypot(k.vx, k.vy) * 3.6).toFixed(0)} km/h)</dd>
+    <dt>Altitude</dt><dd>${Math.round(k.z)} m</dd>
+    <dt>Position error</dt><dd>±${k.sig} m (1σ) · estimate, not a fix</dd>
+    <dt>Latest reading</dt><dd>${k.why}</dd></dl>` : (sel ? `Track #${sel} is not visible at this time.` : "Tap a track on the map.");
+
+  const ev = E.filter(e => e.t <= T).reverse();
+  $("#events").innerHTML = ev.length ? ev.map(e => {
+    let btn = "";
+    if (e.kind === "RECOMMEND") {
+      const d = decided[e.track_id];
+      btn = d ? `<div><b style="color:var(${d.ok ? "--ok" : "--l4"})">${d.ok ? "Approved" : "Rejected"}</b> <span class="mut">(local, t=${d.t} s)</span></div>`
+        : `<div class="ctl" style="margin:6px 0 0"><button class="ok" data-d="1" data-t="${e.track_id}">Approve</button><button class="no" data-d="0" data-t="${e.track_id}">Reject</button></div>`;
+    }
+    return `<div class="row"><span class="mono mut">t=${e.t}s</span> <span class="badge" style="background:${col(e.level)}">${LV[e.level]}</span> <b>#${e.track_id}</b> ${e.label}<div>${e.kind === "RECOMMEND" ? "Recommendation: " : ""}${e.detail}</div>${btn}</div>`;
+  }).join("") : `<div class="mut">No events yet.</div>`;
+
+  const au = A.filter(r => r.payload.t <= T).map(r => ({ t: r.payload.t, h: `#${r.i} ${r.kind} · trk ${r.payload.track} · ${r.payload.level} · ${r.payload.label}`, hash: r.hash.slice(0, 10), loc: false }))
+    .concat(local.filter(l => l.t <= T).map(l => ({ t: l.t, h: `OPERATOR DECISION · trk ${l.track} · ${l.ok ? "approved" : "rejected"}`, hash: "local only", loc: true })))
+    .sort((a, b) => b.t - a.t);
+  $("#audit").innerHTML = au.length ? au.map(r => `<div class="row mono"><span class="mut">t=${r.t}s</span> ${r.h} <span class="mut">· ${r.hash}</span>${r.loc ? ' <span class="badge" style="background:var(--l1)">NOT SENT TO BRAIN</span>' : ""}</div>`).join("") : `<div class="mut">Empty.</div>`;
+  $("#chain").textContent = `Brain audit chain: ${D.audit_valid ? "valid" : "BROKEN"} at export · ${A.length} records · operator decisions here are local to this replay.`;
+}
+
+function go(i) { cur = Math.max(0, Math.min(F.length - 1, i)); render(); }
+function stop() { clearInterval(timer); timer = null; $("#play").textContent = "Play"; }
+function start() {
+  if (cur >= F.length - 1) cur = 0;
+  $("#play").textContent = "Pause";
+  timer = setInterval(() => { if (cur >= F.length - 1) { stop(); return; } go(cur + 1); }, 1000 / +$("#speed").value);
+}
+$("#play").onclick = () => (timer ? stop() : start());
+$("#speed").onchange = () => { if (timer) { stop(); start(); } };
+$("#scrub").max = F.length - 1;
+$("#scrub").oninput = e => go(+e.target.value);
+$("#next").onclick = () => {
+  const T = F[cur].t, r = E.filter(e => e.kind === "RECOMMEND");
+  const n = r.find(e => e.t > T) || r[0];
+  if (n) { sel = n.track_id; go(F.findIndex(f => f.t >= n.t)); }
+};
+$("#map").onclick = e => { const g = e.target.closest("[data-id]"); sel = g ? +g.dataset.id : null; render(); };
+$("#events").onclick = e => {
+  const b = e.target.closest("button[data-d]");
+  if (!b) return;
+  const t = +b.dataset.t, ok = b.dataset.d === "1";
+  decided[t] = { ok, t: F[cur].t };
+  local.push({ t: F[cur].t, track: t, ok });
+  render();
+};
+window.addEventListener("resize", render);
+E.filter(e => e.level >= 3 && e.kind === "LEVEL_CHANGE").forEach(e => {
+  const s = document.createElement("i");
+  s.className = "tick";
+  s.style.left = (e.t / (F.length - 1) * 100) + "%";
+  s.style.background = col(e.level);
+  $("#ticks").appendChild(s);
+});
+render();
+</script>
+</body>
+</html>
