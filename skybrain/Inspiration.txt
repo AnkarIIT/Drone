@@ -1,0 +1,147 @@
+We should take inspiration from publicly documented operational lessons, not replicate offensive strike tactics. The extraordinary version of Skybrain should be a resilient, sensor-fused, human-controlled defensive airspace system that remains trustworthy under clutter, spoofing, jamming, degraded communications, and operator overload.
+
+Public lessons from Iraq, Syria, and U.S. counter-UAS work consistently point to persistence, layered sensing, resilient communications, GPS-denied operation, positive identification, and reducing operator workload—not to a single “smart” interceptor. Sources include the U.S. Army C5ISR Center and JIATF-401 counter-UAS material【https://www.army.mil/article/287738/uas_sensor_protection_key_initiative_for_armys_c5isr_center】【https://media.defense.gov/2026/Jul/08/2003958884/-1/-1/1/SMALL-DRONES-BIG-PROBLEMS-A-FIRST-PRINCIPLES-APPROACH-TO-COUNTER-UAS.PDF】.
+
+Skybrain’s design target
+
+1. See continuously
+
+Build a sensor-agnostic fusion core:
+
+Radar / RF / EO-IR / acoustic / IFF
+        ↓
+time and quality validation
+        ↓
+multi-sensor association
+        ↓
+IMM track and identity confidence
+        ↓
+uncertainty-aware threat state
+        ↓
+human-authorized recommendation
+
+No single sensor should be treated as truth. Every track should carry:
+
+• freshness and age;
+• sensor contributors;
+• position and velocity uncertainty;
+• track quality;
+• identity confidence;
+• missed scans and dropouts;
+• model probabilities;
+• reason for the current threat state.
+
+The system should remain useful when one sensor disappears and clearly say when confidence has degraded.
+
+2. Be difficult to deceive
+
+Identity must be evidence-based:
+
+• authenticated friendly identity is positive evidence, not an absolute override;
+• an unverified friendly ID remains untrusted;
+• RF, kinematic, radar, and visual evidence should be correlated;
+• identity conflicts must create an explicit  IDENTITY_CONFLICT  condition;
+• track continuity must survive crossings without allowing identity to jump between objects;
+• spoofing, replayed IDs, impossible motion, and contradictory sensor reports must be audited.
+
+A track should never become “safe” merely because it claims to be friendly.
+
+3. Predict manoeuvres conservatively
+
+The IMM should be the start, not the finish. For fast targets:
+
+• use cruise, acceleration, and coordinated-turn models;
+• calculate reachable threat envelopes under bounded turn rate and acceleration;
+• include covariance growth and sensor latency;
+• use worst-case reachable entry time for warning prioritization;
+• distinguish predicted, reachable, confirmed, stale, and lost;
+• never display a precise-looking path when uncertainty makes it unjustified.
+
+The operator should see something like:
+
+ ALERT · reachable critical-zone entry: 38–54 s · prediction confidence degraded · 2 sensors · last update 0.8 s ago 
+
+—not merely “critical in 44 seconds.”
+
+4. Make the control layer deterministic
+
+The current recommendation path should become a formal state machine:
+
+OBSERVE
+  → WARN
+  → ALERT
+  → CRITICAL
+  → STALE / LOST / RESOLVED
+
+Every recommendation needs:
+
+• unique recommendation ID;
+• immutable evidence snapshot;
+• creation and expiry time;
+• affected track version;
+• required authority;
+•  OPEN ,  APPROVED ,  REJECTED ,  EXPIRED ,  CANCELLED , or  SUPERSEDED ;
+• authenticated operator identity;
+• reason code and optional note;
+• idempotency protection against duplicate actions.
+
+Approval must never be inferred from silence, timeout, lost connectivity, or a stale screen. The brain should remain advisory; any effectors must be separately authorized and safety-reviewed.
+
+5. Design for saturation and overload
+
+The operator’s scarce resource is attention. Prioritize recommendations by:
+
+1. time to protected-zone entry;
+2. uncertainty-adjusted reachability;
+3. identity conflict;
+4. track quality and freshness;
+5. proximity and consequence;
+6. number of corroborating sensors.
+
+Group duplicate sensor reports into one track, suppress repetitive low-value notifications, and make uncertainty and freshness impossible to miss. The control section should show the most urgent unresolved decision first, but preserve access to the full evidence chain.
+
+6. Survive degraded conditions
+
+Treat these as first-class system states:
+
+• GPS unavailable;
+• clock disagreement;
+• sensor dropout;
+• RF or network loss;
+• overloaded processing queue;
+• stale track;
+• audit failure;
+• conflicting identity;
+• model divergence;
+• brain restart.
+
+Each state needs deterministic behavior, visible health status, and tests. The safe default is no automatic action when authorization, timing, evidence, or track validity is incomplete.
+
+Engineering sequence
+
+1. Reconcile the repository with the claimed IMM/signature-aware implementation.
+2. Define the maximum target envelope and sensor timing budget.
+3. Build a deterministic scenario matrix: high speed, hard turns, crossings, dropouts, spoofing, clutter, friendly traffic, GPS denial, and saturation.
+4. Harden tracking: association, lifecycle, uncertainty, stale handling, and numerical checks.
+5. Implement uncertainty- and manoeuvre-bounded threat prediction.
+6. Replace the current recommendation flag with an idempotent control state machine.
+7. Add authenticated, durable, restart-safe audit records.
+8. Add health/degraded modes and fault injection.
+9. Add the live stream only after the brain exposes a stable versioned contract.
+10. Validate in shadow mode and hardware-in-the-loop before any operational integration.
+
+Non-negotiable acceptance gates
+
+Do not call it ready until it demonstrates, under the stated maximum envelope:
+
+• no unacceptable track swaps during crossings;
+• bounded p95/p99 end-to-end latency;
+• no silent stale-track recommendations;
+• correct behavior under sensor loss and clock faults;
+• no duplicate or unauthorized decision transitions;
+• reproducible replay from the audit stream;
+• measured false-alarm and missed-threat rates;
+• operator evaluation under realistic alert saturation;
+• independent security, safety, and human-factors review.
+
+The core product should be trustworthy defensive decision support under uncertainty, not an autonomous weapon controller. That distinction is what makes the system suitable for serious Army evaluation rather than merely impressive in a simulator.
